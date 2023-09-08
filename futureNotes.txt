@@ -1,0 +1,3 @@
+1_Make confirmation link request maxium of 3 every 24 hours.
+2_Make forget_Password Requests maxium of 3 every 24 hours.
+
