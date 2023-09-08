@@ -256,8 +256,8 @@ const generateConfirmationLink = async (userId,userEmail)=>{
     const currentTimestamp = Date.now();
     const twentyFourHoursFromNow = currentTimestamp + 24 * 60 * 60 * 1000;
     const authConfirmationString = userId + "," + twentyFourHoursFromNow;
-    const hashedAuthConfirmationString = await bcrypt.hash();
-    const authConfirmationLink = confirmationLinkBaseUrl + authConfirmationString;
+    const hashedAuthConfirmationString = await bcrypt.hash(authConfirmationString,10);
+    const authConfirmationLink = confirmationLinkBaseUrl + hashedAuthConfirmationString;
     sendEmailConfirmationLink(userEmail,authConfirmationLink);
 }
 
