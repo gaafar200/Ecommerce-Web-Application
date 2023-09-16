@@ -86,7 +86,7 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'product'
     },
-    is_verfied:{
+    is_verified:{
         type:Boolean,
         default:false
     }
@@ -107,7 +107,7 @@ userSchema.methods.preprocessPassword = async function(password){
 
 userSchema.statics.changePassword = async function(password,user){
     const newPassword = await user.preprocessPassword(password);
-    await this.findByIdAndUpdate(user._id,{password:newPassword},
+    return await this.findByIdAndUpdate(user._id,{password:newPassword},
     {new: true,runValidators: true });   
 }
 

@@ -1,12 +1,14 @@
 const User = require("../models/userModel");
 const jwt = require("jsonwebtoken");
-const {sendEmailConfirmationLink} = require("../utls/emailStuff");
+const {sendEmailConfirmationLink,sendEmailForgetPasswordLink} = require("../utls/emailStuff");
 const bcrypt = require("bcrypt");
+const Cryptr = require('cryptr');
 require("dotenv").config();
 const isValidUserId = require("../utls/mongooseDBValidation");
 const maxAge = 15*24*60*60;
-const halfAMounthFromNow =  new Date(Date.now() + maxAge * 1000);
+const halfAMounthFromNow =  new Date(Date.now() + maxAge * 1000); 
 const lodash = require("lodash");
+
 const register = async (req,res)=>{
     let errors = {};
     let data = {};
@@ -52,7 +54,7 @@ const login = async (req,res)=>{
     }
     catch(error){
         console.log(error.message);
-        errors = {error:error.message};
+        errors.error = error.message;
         res.status(400)
     }
     res.json({errors,data});
@@ -249,16 +251,192 @@ const logout = (req,res)=>{
     res.sendStatus(204);
 }
 
+const confirmEmail = async (req,res)=>{
+    let data = {};
+    let message = "";
+    let errors = {};
+    const encToken = req?.query?.token;
+    if(!encToken){
+        errors.error = "This Link is not valid";
+        res.status(400);
+    }
+    const token = decryptToken(encToken,process.env.SECRET);
+    const parts = token.split(',');
+    const userId = parts[0];
+    const expiresAt = parts[1];
+    if(isValidUserId(userId) && isValidTimestamp(expiresAt)){
+        const currentTimestamp = Date.now();
+        if(currentTimestamp >= expiresAt){
+            errors.error = "This link has been expired";
+            res.status(400);
+        }
+        else{
+            try{
+                
+                const user = await User.findById(userId);
+                if(!user){
+                    errors.error = "This Link is not valid";
+                }
+                else if(user.is_verified){
+                    errors.error = "User email already verified";
+                }
+                else{
+                    await User.findByIdAndUpdate(userId,{is_verified: true});
+                    message = "User Email Verfied Correctly";
+                }
+            }
+            catch(error){
+                console.log(error.message);
+                errors.error = error.message;
+                res.status(400);
+            }
+        }
+    }
+    else{
+        console.log("Ya");
+        errors.error = "This Link is not valid";
+        res.status(400);
+    }
+
+    res.json({errors,data,message});
+}
+
+const resendConfirmLink = (req,res)=>{
+    let errors = {};
+    let data = {};
+    let message = "";
+    try{
+        if(req.user.is_verified){
+            throw new Error("Email already Verfied");
+        }
+        generateConfirmationLink(req.user._id,req.user.email);
+        message = "Email sended successfully";
+    }
+    catch(Error){
+        errors.error = Error.message;
+        res.status(400);
+    }
+    res.json({errors,data,message});
+}
+
+const forgetPasswordEmail = async (req,res)=>{
+    const errors = {};
+    const data = {};
+    let message = "";
+    const {email} = req.body;
+    try{
+        const user = await User.findOne({email});
+        if(!user){
+            throw new Error("Email does not exists");
+        }
+        generateForgetPasswordLink(user._id,user.email,user.password);
+        message = "Reset Password Email Was Sent successfully";
+
+    }
+    catch(error){
+        errors.error = error.message;
+        res.status(400);
+    }
+    res.json({errors,data,message})
+}
+
+const resetPassword = async (req,res)=>{
+    const {id} = req.params;
+    let {token} = req.query;
+    const {newPassword,confirmNewPassword} = req.body;
+    let data = {};
+    let errors = {};
+    let message = "";
+    try{
+        const user = await User.findById(id);
+        if(!isValidUserId(id) || !token || !user){
+            throw new Error("Invalid Link!");
+        }
+        const tokenData = decryptToken(token,user.password);
+        const currentTimeStamp = Date.now();
+        const parts = tokenData.split(',');
+        const userId = parts[0];
+        const timeStamp = parts[1];
+        if(!isValidUserId(userId)
+         || !isValidTimestamp(timeStamp)
+         || userId != id
+         || currentTimeStamp > timeStamp){
+            throw new Error("Invalid Link!");
+        }
+        const passOk =  await bcrypt.compare(newPassword,user.password);
+        if(passOk){
+            errors.newPassword = "New password can't be same as the old passwprd";
+            res.status(400);
+        }
+        else if(newPassword !== confirmNewPassword){
+            errors.confirmNewPassword = "passwords don't match";
+        }
+        else{
+            const newUser = await User.changePassword(newPassword,user);
+            console.log(newUser);
+            token = await createToken(user._id);
+            res.cookie("token",token,{expires: halfAMounthFromNow,httpOnly:false});
+            message = "Password changed successfully";
+            data = newUser;
+        }
+    }
+    catch(error){
+        errors.error = error.message;
+        res.status(400);
+    }
+    res.json({errors,data,message});
+}
 
 /** Additional Functions */
-const generateConfirmationLink = async (userId,userEmail)=>{
-    const confirmationLinkBaseUrl = "http://localhost:5000/user/confirm?token=";
+const returnCryptrObject = (secretKey)=>{
+    return new Cryptr(secretKey); 
+}
+
+const encryptText = (text,secretKey)=>{
+    const cryptr = returnCryptrObject(secretKey)
+    return cryptr.encrypt(text);
+}
+
+const decryptToken = (cipherText,secretKey)=>{
+    const cryptr = returnCryptrObject(secretKey)
+    return cryptr.decrypt(cipherText);
+}
+
+const isValidTimestamp = (timestamp)=>{
+    const minTimestamp = Date.now() - (10 * 365 * 24 * 60 * 60 * 1000);
+    const maxTimestamp = Date.now() + (10 * 365 * 24 * 60 * 60 * 1000);
+    if(timestamp < minTimestamp || timestamp > maxTimestamp){ 
+        return false;
+    }
+    return true;
+}
+
+const LinkGenerationBase = (confirmationLinkBaseUrl,userId,userPassword)=>{
+    let secretKey = ""
+    if(!userPassword){
+        secretKey = process.env.SECRET;
+    }
+    else{
+        secretKey = userPassword;
+    }
+
     const currentTimestamp = Date.now();
     const twentyFourHoursFromNow = currentTimestamp + 24 * 60 * 60 * 1000;
     const authConfirmationString = userId + "," + twentyFourHoursFromNow;
-    const hashedAuthConfirmationString = await bcrypt.hash(authConfirmationString,10);
-    const authConfirmationLink = confirmationLinkBaseUrl + hashedAuthConfirmationString;
+    const encryptedAuthConfirmationString = encryptText(authConfirmationString,secretKey);
+    return confirmationLinkBaseUrl + encryptedAuthConfirmationString  
+}
+
+const generateConfirmationLink = async (userId,userEmail)=>{
+    const confirmationLinkBaseUrl = "http://localhost:3000/user/confirm?token=";
+    const authConfirmationLink = LinkGenerationBase(confirmationLinkBaseUrl,userId)
     sendEmailConfirmationLink(userEmail,authConfirmationLink);
+}
+
+const generateForgetPasswordLink = async (userId,userEmail,userPassword)=>{
+    const confirmationLinkBaseUrl = `http://localhost:3000/reset-password/${userId}?token=`
+    const authConfirmationLink = LinkGenerationBase(confirmationLinkBaseUrl,userId,userPassword);
+    sendEmailForgetPasswordLink(userEmail,authConfirmationLink);
 }
 
 const updateUserData = async (id,req,res)=>{
@@ -369,6 +547,7 @@ const getMobileError = (error)=>{
         return e;
     }
 }
+
 const createToken = (id)=>{
     return new Promise((resolve,reject)=>{
         jwt.sign({id},process.env.SECRET,{},(err,token)=>{
@@ -377,6 +556,7 @@ const createToken = (id)=>{
         });
     })
 }
+
 
 module.exports = {
     register,
@@ -391,4 +571,8 @@ module.exports = {
     blockUser,
     unblockUser,
     logout,
+    confirmEmail,
+    resendConfirmLink,
+    forgetPasswordEmail,
+    resetPassword,
 };
