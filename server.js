@@ -6,6 +6,7 @@ const blogRouter = require("./routes/blogRoutes");
 const cookieParser = require("cookie-parser");
 const AuthRouter = require("./routes/AuthRoutes");
 const imageRouter = require("./routes/fileRoutes");
+const categoryRoutes = require("./routes/CategoryRoutes");
 const {authenticateUser} = require("./middlewares/authMid");
 require("dotenv").config();
 const app = express();
@@ -22,6 +23,7 @@ app.use(authenticateUser);
 app.use(userRouter);
 app.use("/product",productRouter);
 app.use("/blog",blogRouter);
+app.use("/category",categoryRoutes);
 app.listen(PORT,()=>{
     console.log(`Server is listening on port ${PORT}`);
 })
