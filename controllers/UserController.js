@@ -4,7 +4,7 @@ const {sendEmailConfirmationLink,sendEmailForgetPasswordLink} = require("../utls
 const bcrypt = require("bcrypt");
 const Cryptr = require('cryptr');
 require("dotenv").config();
-const isValidUserId = require("../utls/mongooseDBValidation");
+const {validateMongooseObjectId,isValidObjectId:isValidUserId} = require("../utls/mongooseDBValidation");
 const maxAge = 15*24*60*60;
 const halfAMounthFromNow =  new Date(Date.now() + maxAge * 1000); 
 const lodash = require("lodash");
@@ -46,6 +46,7 @@ const login = async (req,res)=>{
     const {email,password} = req.body;
     let errors = {};
     let data = {};
+
     try{
         let user = await User.login(email,password);
         const token = await createToken(user._id);
@@ -74,33 +75,31 @@ const getUserData = async (req,res)=>{
     const {id} = req.params;
     let data = {};
     let errors = {};
-    if(isValidUserId(id)){
-        try{
-            const user = await User.findById(id);
-            data = user;
-        }
-        catch(error){
-            console.log(error.message);
-            res.status(400);
-            errors.error = "undefined user id";
-        }
+    validateMongooseObjectId(id,'user');
+    try{
+        const user = await User.findById(id);
+        data = user;
     }
-    else{
-        errors.error = "This is not a valid user";
+    catch(error){
+        console.log(error.message);
         res.status(400);
+        errors.error = "undefined user id";
     }
     res.json({errors,data});
 }
 
 const editUserData = async (req,res)=>{
     const {id} = req.params;
-    if(!isValidUserId(id)){
+    try{
+        validateMongooseObjectId(id,'user');
         let errors = {};
         let data = {};
-        errors.error = "This is not a vaild user";
-        res.status(400).json(errors,data);
+        updateUserData(id,req,res);
     }
-    updateUserData(id,req,res);
+    catch(error){
+        res.status(400);
+        errors.error = error.message;
+    }
 }
 
 const deleteUser = async (req,res)=>{
@@ -108,25 +107,20 @@ const deleteUser = async (req,res)=>{
     const adminId = req.user.id;
     let errors = {};
     let data = {}
-    if(isValidUserId){
-        try{
-            if(id === adminId){
-                throw new Error("Can't delete admin account");
-            }
-            const deletedUser = await User.findByIdAndDelete(id);
-            if(deletedUser === null){
-                throw new Error("User does not exists");
-            }
-            data = deletedUser;
+    try{
+        validateMongooseObjectId(id,'user');
+        if(id === adminId){
+            throw new Error("Can't delete admin account");
         }
-        catch(error){
-            res.status(400);
-            errors.error = error.message;
+        const deletedUser = await User.findByIdAndDelete(id);
+        if(deletedUser === null){
+            throw new Error("User does not exists");
         }
+        data = deletedUser;
     }
-    else{
-        errors.error = "This is not a vaild user";
+    catch(error){
         res.status(400);
+        errors.error = error.message;
     }
     res.json({errors,data}); 
 }
@@ -142,7 +136,15 @@ const profile = async(req,res)=>{
 
 const EditMyData = async (req,res)=>{
     const id = req.user.id;
-    updateUserData(id,req,res);
+    let errors = {};
+    try{
+        validateMongooseObjectId(id,'user');
+        updateUserData(id,req,res);
+    }
+    catch(error){
+        errors.error = error.message;
+        res.status(400).json({errors: errors,data: {},message: ""});
+    }
 }
 
 const changePassword = async (req,res)=>{
@@ -187,30 +189,26 @@ const blockUser = async (req,res)=>{
     const adminId = req.user.id;
     let data = {}
     let errors = {}
-    if(isValidUserId(id)){
-        try{
-            if(adminId === id){
-                throw new Error("Can't block admin account");
-            }
-            const user = await User.findById(id);
-            if(!user){
-                throw new Error("User not found");
-            }
-            else if(user.is_blocked){
-                throw new Error("User already blocked");
-            }
-            else{
-                await User.findByIdAndUpdate(id,{is_blocked:true});
-                data.message = "User blocked Successfully";
-            }
+    let message = "";
+    try{
+        validateMongooseObjectId(id,'user');
+        if(adminId === id){
+            throw new Error("Can't block admin account");
         }
-        catch(error){
-            errors.error = error.message;
-            res.status(400);
+        const user = await User.findById(id);
+        if(!user){
+            throw new Error("User not found");
+        }
+        else if(user.is_blocked){
+            throw new Error("User already blocked");
+        }
+        else{
+            await User.findByIdAndUpdate(id,{is_blocked:true});
+            message = "User blocked Successfully";
         }
     }
-    else{
-        errors.error = "This is not a vaild user";
+    catch(error){
+        errors.error = error.message;
         res.status(400);
     }
     res.json({errors,data});
@@ -220,28 +218,23 @@ const unblockUser = async (req,res)=>{
     const {id} = req.params;
     let data = {}
     let errors = {}
-    if(isValidUserId(id)){
-        try{
-            const user = await User.findById(id);
-            if(!user){
-                throw new Error("User not found");
-            }
-            else if(!user.is_blocked){
-                throw new Error("User is not blocked");
-            }
-            else{
-                await User.findByIdAndUpdate(id,{is_blocked:false});
-                data.message = "User unblocked Successfully";
-            }
+    try{
+        validateMongooseObjectId(id,'user');
+        const user = await User.findById(id);
+        if(!user){
+            throw new Error("User not found");
         }
-        catch(error){
-            errors.error = error.message;
-            res.status(400);
+        else if(!user.is_blocked){
+            throw new Error("User is not blocked");
+        }
+        else{
+            await User.findByIdAndUpdate(id,{is_blocked:false});
+            data.message = "User unblocked Successfully";
         }
     }
-    else{
+    catch(error){
+        errors.error = error.message;
         res.status(400);
-        errors.error = "This is not a vaild user";
     }
     res.json({errors,data});
 }
@@ -255,7 +248,7 @@ const confirmEmail = async (req,res)=>{
     let data = {};
     let message = "";
     let errors = {};
-    const encToken = req?.query?.token;
+    const encToken = req?.query?.token; 
     if(!encToken){
         errors.error = "This Link is not valid";
         res.status(400);

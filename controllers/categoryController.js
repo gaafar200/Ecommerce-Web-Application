@@ -70,7 +70,7 @@ const getAllProductCategories = async (req,res)=>{
         res.status(422);
     }
     res.json({errors,data,message});
-}
+}  
 
 const getAllBlogCategories = async (req,res)=>{
     let errors = {};
@@ -87,6 +87,47 @@ const getAllBlogCategories = async (req,res)=>{
     res.json({errors,data,message});
 }
 
+const getACategorty = async (req,res)=>{
+    const {id} = req.params;
+    let data = {};
+    let errors = {};
+    let message = "";
+    try{
+        validateMongooseObjectId(id,'category');
+        const category = await Category.findById(id);
+        if(!category){
+            throw new Error("No Category Found!");
+        }
+        data = category;
+        message = "Category has been retreived";
+    }
+    catch(error){
+        res.status(400);
+        errors.error = handleCategoryErrorMessage(error);
+    }
+    res.json({data,errors,message});
+}
+
+const deleteACategory = async(req,res)=>{
+    let data = {};
+    let errors = {};
+    let message = "";
+    const {id} = req.params;
+    try{    
+        validateMongooseObjectId(id,'Category');
+        const category = await Category.findByIdAndDelete(id);
+        if(!category){
+            throw new Error("Category Not Found!!");
+        }
+        data = category;
+        message = "Category deleted Successfully";
+    }
+    catch(error){
+        res.status(400);
+        errors = handleCategoryErrorMessage(error);
+    }
+    res.json({errors,data,message});
+}
 
 /** addtional functions */
 const handleCategoryErrorMessage = (error)=>{
@@ -122,5 +163,7 @@ module.exports = {
     getAllBrands,
     getAllProductCategories,
     getAllBlogCategories,
+    getACategorty,
+    deleteACategory,
 };
 
