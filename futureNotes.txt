@@ -3,3 +3,4 @@
 3_implement all devices log-out.
 4_delete unverified accounts after 15 days.
 5_Edit Blog Number of views to be more resonable.
+6_make totalRating field computation better in performance.

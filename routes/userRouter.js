@@ -15,5 +15,6 @@ router.put("/user/:id",authenticateAdmin,userController.editUserData);
 router.delete("/user/:id",authenticateAdmin,userController.deleteUser);
 router.get("/user/block/:id",authenticateAdmin,userController.blockUser);
 router.get("/user/unblock/:id",authenticateAdmin,userController.unblockUser);
+router.get("/user/wishlist/:productId",userController.addToWishlist);
 
 module.exports = router;

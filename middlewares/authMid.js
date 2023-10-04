@@ -33,9 +33,9 @@ const authenticateAdmin = (req,res,next)=>{
     let errors = {};
     const user = req.user;
     try{
-        if(!user){
+        if(user.role !== 1){
             errors.error = "You are Not authorized to perform this action"
-            res.status(401).json({errors});
+            res.status(401).json({errors,data: {},message:""});
         }
         else{
             next();
@@ -44,7 +44,7 @@ const authenticateAdmin = (req,res,next)=>{
     catch(error){
         console.log(error);
         errors.error = "You are Not authorized to perform this action"
-        res.status(401).json({errors});
+        res.status(401).json({errors,data: {},message:""});
     }
 }
 

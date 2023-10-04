@@ -1,5 +1,7 @@
 const Product = require("../models/productModel");
-const isValidProductId = require("../utls/mongooseDBValidation");
+const Rate = require("../models/rateModel")
+const {isValidObjectId:isValidProductId,validateMongooseObjectId} = require("../utls/mongooseDBValidation");
+const {handleErrors} = require("../utls/handleErrors");
 const slugify = require("slugify");
 const createProduct = async(req,res)=>{
     let data = {};
@@ -27,7 +29,8 @@ const createProduct = async(req,res)=>{
             category,
         });
         const newProduct = await product.save();
-        data = newProduct;
+        data = newProduct.toObject();
+        data.totalRating = 0;
     }
     catch(error){
         console.log(error.message);
@@ -39,6 +42,7 @@ const createProduct = async(req,res)=>{
 const getAllProducts = async (req,res)=>{
     let data = {};
     let errors = {};
+    let message = "";
     //Filitering
     let queryParams = {...req.query};
     const excludedParams = ['sort','page','limit','fields'];
@@ -62,27 +66,30 @@ const getAllProducts = async (req,res)=>{
     try{
         const products = await Product.find(JSON.parse(queryString)).sort(sortBy).limit(limit).skip(skip);
         data = products;
+        message = "Retreived all products successfully";
     }
     catch(error){
         errors.error = error.message;
         res.status(400);
     }
-    res.json({errors,data});
+    res.json({errors,data,message});
 }
 
 const getSpecificProduct = async (req,res)=>{
     const {id} = req.params;
     let data = {};
     let errors = {};
+    let message = "";
     if(isValidProductId(id)){
         try{
             const product = await Product.findById(id);
-            if(product === null){
-                errors.error = "user not found"
+            if(!product){
+                errors.error = "Product not found!"
                 res.status(400);
             }
             else{
-                data = product;
+                data = product
+                message = "Retrieved product successfully";
             }
         }   
         catch(error){
@@ -93,13 +100,14 @@ const getSpecificProduct = async (req,res)=>{
         errors.error = "Product id is not valid";
         res.status(400);
     }
-    res.json({errors,data});
+    res.json({errors,data,message});
 }
 
 const updateProduct = async (req,res)=>{    
     const {id} = req.params;
     let errors = {};
     let data = {};
+    let message = ""
     if(isValidProductId(id)){
         try{
             const editData = {
@@ -115,9 +123,14 @@ const updateProduct = async (req,res)=>{
                 editData.slug = await createSlug(editData.title);
             }
             const product = await Product.findByIdAndUpdate(id,editData,{new:true,runValidators:true});
+            if(!product){
+                throw new Error("error: Product not found!");
+            }
             data = product;
+            message = "Product updated successfully";
         }
         catch(error){
+            res.status(400);
             console.log(error.message);
             errors = handleErrors(error.message);
         }
@@ -126,13 +139,14 @@ const updateProduct = async (req,res)=>{
         errors.error = "invalid product id";
         res.status(400);
     }
-    res.json({errors,data});
+    res.json({errors,data,message});
 }
 
 const deleteProduct = async (req,res)=>{
     const {id} = req.params;
     let errors = {};
     let data = {};
+    let message = "";
     if(isValidProductId(id)){
         try{
             const product = await Product.findByIdAndDelete(id);
@@ -142,6 +156,7 @@ const deleteProduct = async (req,res)=>{
             }
             else{
                 data = product;
+                message = "Product deleted Successfully";
             }
         }
         catch(e){
@@ -153,25 +168,68 @@ const deleteProduct = async (req,res)=>{
         errors.error = "invalid product id";
         res.status(400);
     }
-    res.json({errors,data}) 
+    res.json({errors,data,message}); 
 }
 
+const rateAProduct = async (req,res)=>{ 
+    let data = {};
+    let errors = {};
+    let message = "";
+    const userId = req.user._id;
+    const {id:productId} = req.params;
+    const {rate,comment} = req.body
+    try{
+        validateMongooseObjectId(productId,'product');
+        validateUserRate(rate);
+        const product = await Product.findById(productId);
+        if(!product){
+            throw new Error("Invalid product id");
+        }
+        const userRate = await Rate.findOne({productId,postedBy:userId});
+        let newAverageRate = 0;
+        let newRatingsCount = 0;
+        if(userRate){
+            newAverageRate = recomputeAverageRate(product.averageRating,product.ratingsCount,rate,userRate.rate);
+            console.log(newAverageRate);
+            newRatingsCount = product.ratingsCount;
+            userRate.rate = rate;
+            userRate.comment = comment;
+            userRate.save();
+            message = "Rate updated successfully";
+        }
+        else{
+            newAverageRate = computeAverageRate(product.averageRating,product.ratingsCount,rate);
+            newRatingsCount = product.ratingsCount + 1;
+            const newRateRecord = new Rate({
+                rate,
+                comment,
+                productId,
+                postedBy: userId
+            })
+            newRateRecord.save();
+            message = "Rate submitted succssfully";
+        }
+        const newProduct = await Product.findByIdAndUpdate(productId,
+            {
+                averageRating: newAverageRate,
+                ratingsCount: newRatingsCount,
+            },
+            {
+                ruuValidators: true,
+                new: true
+            }
+        );
+        data = newProduct;
+    }    
+    catch(error){
+        console.log(error.message);
+        errors = handleErrors(error.message);
+        res.status(400);
+    }
+    res.json({errors,data,message});  
+}
 
 /** Additional Functions */
-const handleErrors = (message)=>{
-    let errors = {};
-    const errorParts = message.split(',');
-    let colonIndex = errorParts[0].indexOf(':');
-    errorParts[0] = errorParts[0].substring(colonIndex + 1).trim();
-    errorParts.forEach((err)=>{
-        colonIndex = err.indexOf(":");
-        let key = err.substring(0,colonIndex).trim();
-        let value = err.substring(colonIndex + 1).trim();
-        errors[key] = value;
-    });
-    return errors;
-}
-
 const createSlug = async (title)=>{
     if(title === undefined){
         throw new Error("Error: title: Product must have a title");
@@ -190,10 +248,35 @@ const createSlug = async (title)=>{
     }
 }
 
+const getProductById = async (id)=>{
+    return await Product.findById(id);
+}
+
+const validateUserRate = (rate)=>{
+    console.log(typeof rate);
+    if(rate === undefined){
+        throw new Error("rate: rate is required!");
+    }
+    else if(typeof rate !== 'number' || rate > 5 || rate < 0){
+        throw new Error("rate: rate is invalid");
+    }
+    else{
+        return true;
+    }
+}
+const recomputeAverageRate = (oldAverageRate,oldRatingCount,newRate,oldRate)=>{
+    return ((oldAverageRate * oldRatingCount - oldRate + newRate))/oldRatingCount;
+}
+const computeAverageRate = (oldAverageRate,oldRatingCount,newRate)=>{
+    return (oldAverageRate * oldRatingCount + newRate)/(oldRatingCount + 1)
+}
+
 module.exports = {
     createProduct,
     getAllProducts,
     getSpecificProduct,
     updateProduct,
-    deleteProduct
+    deleteProduct,
+    getProductById,
+    rateAProduct
 }

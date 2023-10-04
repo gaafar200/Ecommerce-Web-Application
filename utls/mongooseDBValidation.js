@@ -5,7 +5,6 @@ const isValidObjectId = (id)=>{
 }
 
 const validateMongooseObjectId = (id,TYPE)=>{
-    console.log(id);console.log(isValidObjectId(id));
     if(!id || !isValidObjectId(id)){
         throw new Error(`Invalid ${TYPE} id`);
     }

@@ -82,10 +82,12 @@ const userSchema = new mongoose.Schema({
         type:Boolean,
         default: false,
     },
-    wishlist:{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'product'
-    },
+    wishlist:[
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'product'
+        }    
+    ],
     is_verified:{
         type:Boolean,
         default:false

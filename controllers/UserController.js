@@ -5,6 +5,8 @@ const bcrypt = require("bcrypt");
 const Cryptr = require('cryptr');
 require("dotenv").config();
 const {validateMongooseObjectId,isValidObjectId:isValidUserId} = require("../utls/mongooseDBValidation");
+const {handleErrors:handleErrorUtlity} = require("../utls/handleErrors");
+const {getProductById} = require("./ProductController");
 const maxAge = 15*24*60*60;
 const halfAMounthFromNow =  new Date(Date.now() + maxAge * 1000); 
 const lodash = require("lodash");
@@ -62,13 +64,19 @@ const login = async (req,res)=>{
 }
 
 const getAllUsers = async (req,res)=>{
+    let errors = {};
+    let data = {};
+    let message = "";
     try{
         const users = await User.find({});
-        res.json(users);
+        data = users;
+        message = "Retrieved all users successfully";
     }
     catch(error){
-        res.status(400).json(error);
+        res.status(400)
+        errors = handleErrorUtlity(error.message);
     }
+    res.json({errors,data,message});
 }
 
 const getUserData = async (req,res)=>{
@@ -135,7 +143,7 @@ const profile = async(req,res)=>{
 }
 
 const EditMyData = async (req,res)=>{
-    const id = req.user.id;
+    const id = req.user._id;
     let errors = {};
     try{
         validateMongooseObjectId(id,'user');
@@ -380,6 +388,41 @@ const resetPassword = async (req,res)=>{
     res.json({errors,data,message});
 }
 
+const addToWishlist = async (req,res)=>{
+    const {productId} = req.params;
+    let data = {};
+    let errors = {};
+    let message = "";
+    try{
+        let user = req.user;
+        validateMongooseObjectId(productId,'product');
+        const product = await getProductById(productId)
+        if(!product){
+            throw new Error("Invalid product id");
+        }
+        let wishlist = user.wishlist;
+        const alreadyInWishList = wishlist.some((productObject)=> productObject.toString() === productId);
+        if(alreadyInWishList){
+            wishlist = wishlist.filter((id)=> id.toString() !== productId);
+            message = "Product removed successfully from wishlist";
+        }
+        else{
+            wishlist.push(productId);
+            message = "Product added successfully to wishlist";
+        }
+        const newUser = await User.findByIdAndUpdate(user._id,{
+            wishlist:wishlist
+        },{runValidator:true,new:true})
+        data = newUser;
+    }
+    catch(error){
+        errors = handleErrorUtlity(error.message);
+        res.status(400);
+    }
+    res.json({errors,data,message});
+}
+
+
 /** Additional Functions */
 const returnCryptrObject = (secretKey)=>{
     return new Cryptr(secretKey); 
@@ -462,7 +505,7 @@ const handleError = (err)=>{
     errors.password = getPasswordError(errorMessage);
     errors.lastName = getLastNameError(errorMessage);
     if(Object.keys(errors).length === 0){
-        return {"errors":err};
+        errors.error = err.message;
     }
     return errors;
 }
@@ -568,4 +611,5 @@ module.exports = {
     resendConfirmLink,
     forgetPasswordEmail,
     resetPassword,
+    addToWishlist,
 };

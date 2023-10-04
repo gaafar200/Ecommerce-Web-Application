@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 const validator = require("validator");
-
 const productModel = new mongoose.Schema({
     title:{
         type:String,
@@ -87,10 +86,14 @@ const productModel = new mongoose.Schema({
         type: Number,
         default: 0,
     },
-    ratings:[{
-        star:Number,
-        postedBy: {type: mongoose.Schema.Types.ObjectId,ref: "User"}
-    }],
+    ratingsCount: {
+        type: Number,
+        default: 0,
+    },
+    averageRating: {
+        type: Number,
+        default: 0.0
+    }
 },{timestamps: true});
 
 
